@@ -5,6 +5,7 @@ import tntapi
 from yangcli import yangcli
 from lxml import etree
 
+
 def main():
     if not settings_exist():
         create_settings()

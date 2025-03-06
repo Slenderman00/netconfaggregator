@@ -12,7 +12,17 @@ settings = {
     },
     "polling": {
         "rate": 60,
-    }
+    },
+    "device":
+    [
+        {
+            "node-id": "device_1",
+            "user": "user",
+            "server": "10.0.0.1",
+            "password": "grimbadgerassaut",
+            "ncport": "830"
+        }
+    ]
 }
 
 
