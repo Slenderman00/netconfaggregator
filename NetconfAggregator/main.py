@@ -19,6 +19,13 @@ def main():
         help="Edit the settings",
     )
 
+    parser.add_argument(
+        "--init",
+        "-i",
+        action="store_true",
+        help="Initialize the database",
+    )
+
     args = parser.parse_args()
 
     if args.settings:
