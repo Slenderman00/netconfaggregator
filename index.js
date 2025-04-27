@@ -1,11 +1,15 @@
 const easyNetconf = require('./easynetconf-cjs');
 
 const express = require('express')
+
 const dotenv = require('dotenv');
 dotenv.config();
 
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+
+const xpath = require('xpath');
+const dom = require('xmldom').DOMParser;
 
 const path = require('path');
 const fs = require('fs');
@@ -115,6 +119,9 @@ easyNetconf.ready().then(() => {
 const app = express()
 const port = 3000
 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 let _server = app.listen(port, () => {
     console.log(`Example app listening on port ${port}`);
 });
@@ -128,8 +135,9 @@ app.get('/devices', (req, res) => {
     })));
 });
 
-app.get('/timeseries/:deviceId', async (req, res) => {
+app.post('/timeseries/:deviceId', async (req, res) => {
     const { deviceId } = req.params;
+    const { xpathQuery } = req.body;
     try {
         const timeSeriesData = await prisma.timeseriesXML.findMany({
             where: { deviceName: deviceId },
@@ -138,7 +146,20 @@ app.get('/timeseries/:deviceId', async (req, res) => {
         if (timeSeriesData.length === 0) {
             return res.status(404).json({ error: `No time series data found for device ${deviceId}` });
         }
-        res.json(timeSeriesData);
+
+        let filteredData = timeSeriesData;
+        if (xpathQuery) {
+            console.log(xpathQuery)
+            filteredData = timeSeriesData.map(entry => {
+                const doc = new dom().parseFromString(entry.xml);
+                const nodes = xpath.select(xpathQuery, doc);
+                return {
+                    ...entry,
+                    filteredXml: nodes.map(node => node.toString()).join()
+                };
+            });
+        }
+        res.json(filteredData);
     } catch (error) {
         console.error(`Error fetching time series data for device ${deviceId}:`, error);
         res.status(500).json({ error: 'Internal server error' });
