@@ -19,7 +19,7 @@ const parser = new XMLParser();
 
 const filePath = process.argv[2] || path.join(__dirname, 'networks.xml');
 const postgresUrl = process.argv[3] || process.env.DATABASE_URL;
-const pollingInterval = process.argv[4] || 10000; // Default to 1 second for testing
+const pollingInterval = process.argv[4] || 100000; // Default to 10 second for testing
 
 if (!postgresUrl) {
     console.error('Postgres URL not provided. Please set the DATABASE_URL environment variable or pass it as a command line argument.');
@@ -153,10 +153,8 @@ app.post('/timeseries/:deviceId', async (req, res) => {
             filteredData = timeSeriesData.map(entry => {
                 const doc = new dom().parseFromString(entry.xml);
                 const nodes = xpath.select(xpathQuery, doc);
-                return {
-                    ...entry,
-                    filteredXml: nodes.map(node => node.toString()).join()
-                };
+                entry.xml = nodes.map(node => node.toString()).join();
+                return entry;
             });
         }
         res.json(filteredData);

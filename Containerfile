@@ -50,7 +50,7 @@ EXPOSE 5432 3000
 
 RUN echo '#!/bin/bash\n\
 service postgresql start\n\
-until pg_isready -h 127.0.0.1 -p 5433 -U postgres; do\n\
+until pg_isready -h 127.0.0.1 -p 5432 -U postgres; do\n\
     echo "Waiting for PostgreSQL to be ready..."\n\
     service postgresql status\n\
     sleep 2\n\
