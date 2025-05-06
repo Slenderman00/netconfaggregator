@@ -16,7 +16,7 @@ const prisma = new PrismaClient();
 
 const filePath = process.argv[2] || path.join(__dirname, 'networks.xml');
 const postgresUrl = process.argv[3] || process.env.DATABASE_URL;
-const pollingInterval = process.argv[4] || 100000;
+const pollingInterval = process.argv[4] || 10000;
 
 if (!postgresUrl) {
     console.error('Postgres URL not provided. Please set the DATABASE_URL environment variable or pass it as a command line argument.');
@@ -69,10 +69,11 @@ function maintainSessions(devices) {
 
 function updateDatabase(devices) {
     devices.forEach(device => {
-
         try {
+            console.log("fetching data from: " + device.id)
             res = device.session.perform('xget /', parse=false)
         } catch {
+            console.log("fetching data failed, marking device as inactive")
             device.session.connected = false;
         }
 
@@ -83,7 +84,7 @@ function updateDatabase(devices) {
                 'xml': res
             }
         }).then((_) => {
-            
+            console.log("Successfully added data to database")
         })
     });
 }
