@@ -1,15 +1,9 @@
 const easyNetconf = require('./easynetconf-cjs');
 
-const express = require('express')
+const processNetworks = require('./processNetworks.js')
 
 const dotenv = require('dotenv');
 dotenv.config();
-
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
-
-const xpath = require('xpath');
-const dom = require('xmldom').DOMParser;
 
 const path = require('path');
 const fs = require('fs');
@@ -17,9 +11,12 @@ const fs = require('fs');
 const { XMLParser } = require("fast-xml-parser");
 const parser = new XMLParser();
 
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+
 const filePath = process.argv[2] || path.join(__dirname, 'networks.xml');
 const postgresUrl = process.argv[3] || process.env.DATABASE_URL;
-const pollingInterval = process.argv[4] || 100000; // Default to 10 second for testing
+const pollingInterval = process.argv[4] || 100000;
 
 if (!postgresUrl) {
     console.error('Postgres URL not provided. Please set the DATABASE_URL environment variable or pass it as a command line argument.');
@@ -44,34 +41,6 @@ if (!fs.existsSync(filePath)) {
 let content = fs.readFileSync(filePath, 'utf8');
 content = parser.parse(content);
 
-function processNetworks(data) {
-    let networks = data.config.networks.network;
-
-    if (!Array.isArray(networks)) {
-        networks = [networks];
-    }
-
-    let devices = [];
-
-    networks.forEach((network) => {
-
-        if (!Array.isArray(network.node)) {
-            network.node = [network.node];
-        }
-
-        network.node.forEach((node) => {
-            devices.push({ 'id': node['node-id'], 
-                'user': node['netconf-connect-params']['user'], 
-                'server': node['netconf-connect-params']['server'], 
-                'password': node['netconf-connect-params']['password'], 
-                'port': node['netconf-connect-params']['ncport'] 
-            });
-        });
-    });
-
-    return devices;
-}
-
 function createSessions(devices) {
     devices.forEach(device => {
         session = new easyNetconf()
@@ -80,86 +49,53 @@ function createSessions(devices) {
         session.async_connect(device.server, device.port, device.user, device.password, null, null).then((result) => {
                 console.log(`Succsessfully connected to: ${device.id}`);
             }).catch((e) => {
-                node.error(`NETCONF Setup Error: ${e}`);
+                console.error(`NETCONF Setup Error: ${e}`);
             });
     });
 
     return devices
 }
 
-function updateDatabase(devices) {
-    _server.close(() => {
-        devices.forEach(device => {
-            res = device.session.perform('xget /', parse=false)
-            prisma.timeseriesXML.create({
-                data: {
-                    'deviceName': device.id,
-                    'timestamp': new Date(),
-                    'xml': res
-                }
-            }).then((_) => {
-                
-            })
-        });
+function maintainSessions(devices) {
+    devices.forEach(device => {
+        session = device.session
+        session.async_connect(device.server, device.port, device.user, device.password, null, null).then((result) => {
+                console.log(`Succsessfully connected to: ${device.id}`);
+            }).catch((e) => {
+                console.error(`NETCONF Setup Error: ${e}`);
+            });
+    });
+}
 
-        _server = app.listen(port, () => {
-        
-        });
-    })
+function updateDatabase(devices) {
+    devices.forEach(device => {
+
+        try {
+            res = device.session.perform('xget /', parse=false)
+        } catch {
+            device.session.connected = false;
+        }
+
+        prisma.timeseriesXML.create({
+            data: {
+                'deviceName': device.id,
+                'timestamp': new Date(),
+                'xml': res
+            }
+        }).then((_) => {
+            
+        })
+    });
 }
 
 easyNetconf.ready().then(() => {
     let devices = createSessions(processNetworks(content));
 
     setInterval(() => {
+        maintainSessions(devices)
+    }, 60);
+
+    setInterval(() => {
         updateDatabase(devices);
     }, pollingInterval);
-});
-
-const app = express()
-const port = 3000
-
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-let _server = app.listen(port, () => {
-    console.log(`Example app listening on port ${port}`);
-});
-
-app.get('/devices', (req, res) => {
-    const devices = processNetworks(content);
-    res.json(devices.map(device => ({
-        id: device.id,
-        server: device.server,
-        port: device.port
-    })));
-});
-
-app.post('/timeseries/:deviceId', async (req, res) => {
-    const { deviceId } = req.params;
-    const { xpathQuery } = req.body;
-    try {
-        const timeSeriesData = await prisma.timeseriesXML.findMany({
-            where: { deviceName: deviceId },
-            orderBy: { timestamp: 'desc' }
-        });
-        if (timeSeriesData.length === 0) {
-            return res.status(404).json({ error: `No time series data found for device ${deviceId}` });
-        }
-
-        let filteredData = timeSeriesData;
-        if (xpathQuery) {
-            console.log(xpathQuery)
-            filteredData = timeSeriesData.map(entry => {
-                const doc = new dom().parseFromString(entry.xml);
-                const nodes = xpath.select(xpathQuery, doc);
-                entry.xml = nodes.map(node => node.toString()).join();
-                return entry;
-            });
-        }
-        res.json(filteredData);
-    } catch (error) {
-        console.error(`Error fetching time series data for device ${deviceId}:`, error);
-        res.status(500).json({ error: 'Internal server error' });
-    }
 });
