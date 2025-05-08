@@ -48,6 +48,7 @@ const simpleHash = str => {
 };
 
 hashlist = {}
+processingque = {}
 
 const processDate = (date) => {
     let d = new Date(date);
@@ -77,15 +78,76 @@ const setHashData = (device, xpathQuery, from, to, data) => {
     hashlist[hash] = data;
 }
 
+const addToProcessingQue = (device, xpathQuery, from, to) => {
+    from = processDate(from)
+    to = processDate(to)
+
+    let hash = simpleHash(`${device}${xpathQuery}${from}${to}`);
+
+    processingque[hash] = true;
+
+    setTimeout(() => {
+        if(hash in processingque) {
+            delete processingque[hash];
+        }
+    }, 60 * 1000);
+}
+
+const removeFromProcessingQue = (device, xpathQuery, from, to) => {
+    from = processDate(from)
+    to = processDate(to)
+
+    let hash = simpleHash(`${device}${xpathQuery}${from}${to}`);
+
+    if(hash in processingque) {
+        delete processingque[hash];
+        console.log(`${xpathQuery} timed out, removing from que`);
+    }
+}
+
+const ifProcessing = (device, xpathQuery, from, to) => {
+    from = processDate(from)
+    to = processDate(to)
+
+    let hash = simpleHash(`${device}${xpathQuery}${from}${to}`);
+    
+    if(hash in processingque) {
+        return true
+    }
+
+    return false
+}
+
 setInterval(() => {
     hashlist = {};
     console.log('cleared cache')
 }, 60 * 1000 * 3);
 
+const waitForProcessingToFinish = (device, xpathQuery, from, to) => {
+    return new Promise((resolve) => {
+        const interval = setInterval(() => {
+            if (!ifProcessing(device, xpathQuery, from, to)) {
+                clearInterval(interval);
+                resolve();
+            }
+        }, 100);
+    });
+};
+
+const randomDelay = (min = 10, max = 100) => {
+    return new Promise((resolve) => {
+        const delay = Math.floor(Math.random() * (max - min + 1)) + min;
+        setTimeout(resolve, delay);
+    });
+};
+
 app.post('/timeseries/:deviceId', async (req, res) => {
     const { deviceId } = req.params;
     const { xpathQuery, from, to } = req.body;
     console.log(xpathQuery, from, to)
+
+    await randomDelay(0, 1000);
+    await waitForProcessingToFinish(deviceId, xpathQuery, from, to);
 
     let hashdata = getHashData(deviceId, xpathQuery, from, to)
     if(hashdata) {
@@ -93,6 +155,9 @@ app.post('/timeseries/:deviceId', async (req, res) => {
         res.json(hashdata)
         return
     }
+    
+    addToProcessingQue(deviceId, xpathQuery, from, to);
+    console.log('adding to processing que');
 
     try {
         const timeSeriesData = await prisma.timeseriesXML.findMany({
@@ -119,6 +184,8 @@ app.post('/timeseries/:deviceId', async (req, res) => {
         }
 
         setHashData(deviceId, xpathQuery, from, to, filteredData)
+        removeFromProcessingQue(deviceId, xpathQuery, from, to);
+        console.log('processed and cached');
         res.json(filteredData);
     } catch (error) {
         console.error(`Error fetching time series data for device ${deviceId}:`, error);
