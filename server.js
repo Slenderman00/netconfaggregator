@@ -38,11 +38,45 @@ app.get('/devices', (req, res) => {
     })));
 });
 
+const simpleHash = str => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = (hash << 5) - hash + char;
+    }
+    return (hash >>> 0).toString(36).padStart(7, '0');
+};
+
+hashlist = {}
+
+const getHashData = (xpathQuery, from, to) => {
+    let hash = simpleHash(`${xpathQuery}${from}${to}`);
+    if(hash in hashlist) {
+        return hashlist[hash];
+    }
+    return false
+}
+
+const setHashData = (xpathQuery, from, to, data) => {
+    let hash = simpleHash(`${xpathQuery}${from}${to}`);
+    hashlist[hash] = data;
+}
+
+setInterval(() => {
+    hashlist = {};
+}, 60);
 
 app.post('/timeseries/:deviceId', async (req, res) => {
     const { deviceId } = req.params;
     const { xpathQuery, from, to } = req.body;
     console.log(xpathQuery, from, to)
+
+    let hashdata = getHashData(xpathQuery, from, to)
+    if(hashdata) {
+        console.log('found response in cache');
+        res.json(hashdata)
+    }
+
     try {
         const timeSeriesData = await prisma.timeseriesXML.findMany({
             where: { deviceName: deviceId,
@@ -59,7 +93,6 @@ app.post('/timeseries/:deviceId', async (req, res) => {
 
         let filteredData = timeSeriesData;
         if (xpathQuery) {
-            console.log(xpathQuery)
             filteredData = timeSeriesData.map(entry => {
                 const doc = new dom().parseFromString(entry.xml);
                 const nodes = xpath.select(xpathQuery, doc);
@@ -67,6 +100,8 @@ app.post('/timeseries/:deviceId', async (req, res) => {
                 return entry;
             });
         }
+
+        setHashData(xpathQuery, from, to, filteredData)
         res.json(filteredData);
     } catch (error) {
         console.error(`Error fetching time series data for device ${deviceId}:`, error);
