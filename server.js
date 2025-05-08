@@ -49,32 +49,49 @@ const simpleHash = str => {
 
 hashlist = {}
 
-const getHashData = (xpathQuery, from, to) => {
-    let hash = simpleHash(`${xpathQuery}${from}${to}`);
+const processDate = (date) => {
+    let d = new Date(date);
+
+    let datetext = d.toTimeString();
+    datetext = datetext.split(' ')[0];
+    datetext = datetext.split(':');
+    return `${datetext[0]}:${datetext[1]}`
+}
+
+const getHashData = (device, xpathQuery, from, to) => {
+    from = processDate(from)
+    to = processDate(to)
+
+    let hash = simpleHash(`${device}${xpathQuery}${from}${to}`);
     if(hash in hashlist) {
         return hashlist[hash];
     }
     return false
 }
 
-const setHashData = (xpathQuery, from, to, data) => {
-    let hash = simpleHash(`${xpathQuery}${from}${to}`);
+const setHashData = (device, xpathQuery, from, to, data) => {
+    from = processDate(from)
+    to = processDate(to)
+
+    let hash = simpleHash(`${device}${xpathQuery}${from}${to}`);
     hashlist[hash] = data;
 }
 
 setInterval(() => {
     hashlist = {};
-}, 60);
+    console.log('cleared cache')
+}, 60 * 1000 * 3);
 
 app.post('/timeseries/:deviceId', async (req, res) => {
     const { deviceId } = req.params;
     const { xpathQuery, from, to } = req.body;
     console.log(xpathQuery, from, to)
 
-    let hashdata = getHashData(xpathQuery, from, to)
+    let hashdata = getHashData(deviceId, xpathQuery, from, to)
     if(hashdata) {
         console.log('found response in cache');
         res.json(hashdata)
+        return
     }
 
     try {
@@ -101,7 +118,7 @@ app.post('/timeseries/:deviceId', async (req, res) => {
             });
         }
 
-        setHashData(xpathQuery, from, to, filteredData)
+        setHashData(deviceId, xpathQuery, from, to, filteredData)
         res.json(filteredData);
     } catch (error) {
         console.error(`Error fetching time series data for device ${deviceId}:`, error);
