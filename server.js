@@ -41,10 +41,16 @@ app.get('/devices', (req, res) => {
 
 app.post('/timeseries/:deviceId', async (req, res) => {
     const { deviceId } = req.params;
-    const { xpathQuery } = req.body;
+    const { xpathQuery, from, to } = req.body;
+    console.log(xpathQuery, from, to)
     try {
         const timeSeriesData = await prisma.timeseriesXML.findMany({
-            where: { deviceName: deviceId },
+            where: { deviceName: deviceId,
+                timestamp: {
+                    gte: new Date(from),
+                    lte: new Date(to)
+                }
+            },
             orderBy: { timestamp: 'desc' }
         });
         if (timeSeriesData.length === 0) {
