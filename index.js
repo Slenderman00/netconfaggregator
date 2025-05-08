@@ -41,19 +41,18 @@ if (!fs.existsSync(filePath)) {
 let content = fs.readFileSync(filePath, 'utf8');
 content = parser.parse(content);
 
-function createSessions(devices) {
-    devices.forEach(device => {
-        session = new easyNetconf()
-        device.session = session
-
-        session.async_connect(device.server, device.port, device.user, device.password, null, null).then((result) => {
-                console.log(`Succsessfully connected to: ${device.id}`);
-            }).catch((e) => {
-                console.error(`NETCONF Setup Error: ${e}`);
-            });
-    });
-
-    return devices
+async function createSessions(devices) {
+    for (const device of devices) {
+        const session = new easyNetconf();
+        device.session = session;
+        try {
+            await session.async_connect(device.server, device.port, device.user, device.password, null, null);
+            console.log(`Successfully connected to: ${device.id}`);
+        } catch (e) {
+            console.error(`NETCONF Setup Error: ${e}`);
+        }
+    }
+    return devices;
 }
 
 function maintainSessions(devices) {
@@ -89,14 +88,14 @@ function updateDatabase(devices) {
     });
 }
 
-easyNetconf.ready().then(() => {
-    let devices = createSessions(processNetworks(content));
-
-    setInterval(() => {
-        maintainSessions(devices)
-    }, 60);
-
-    setInterval(() => {
-        updateDatabase(devices);
-    }, pollingInterval);
+easyNetconf.ready().then(async () => {
+    let devices = await createSessions(processNetworks(content));
+    setTimeout(() => {
+        setInterval(() => {
+            maintainSessions(devices);
+        }, 60);
+        setInterval(() => {
+            updateDatabase(devices);
+        }, pollingInterval);
+    }, 30);
 });
